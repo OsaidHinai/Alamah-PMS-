@@ -22,8 +22,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: 'Unknown error', code: 'UNKNOWN' }));
-    throw new ApiError(res.status, body.code || 'UNKNOWN', body.error || 'Request failed', body.details);
+    const text = await res.text().catch(() => '');
+    let body: { error?: string; code?: string; details?: unknown } = {};
+    try { body = JSON.parse(text); } catch { body = { error: text.slice(0, 200) || `HTTP ${res.status}`, code: 'UNKNOWN' }; }
+    throw new ApiError(res.status, body.code || 'UNKNOWN', body.error || `HTTP ${res.status}`, body.details);
   }
 
   return res.json();
