@@ -1,4 +1,4 @@
-import { RATING_LABELS } from '@alamah/shared';
+import { RATING_LABELS } from '../types';
 
 export interface ScoringItem {
   employee_rating: number | null;

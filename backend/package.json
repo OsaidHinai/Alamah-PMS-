@@ -4,7 +4,8 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
-    "start": "prisma migrate deploy && prisma db seed && node dist/server.js",
+    "postinstall": "prisma generate",
+    "start": "npx prisma migrate deploy && npx prisma db seed && node dist/server.js",
     "test": "jest --runInBand",
     "test:watch": "jest --watch"
   },

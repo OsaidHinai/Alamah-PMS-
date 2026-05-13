@@ -3,7 +3,4 @@ module.exports = {
   testEnvironment: 'node',
   roots: ['<rootDir>/src'],
   testMatch: ['**/*.test.ts'],
-  moduleNameMapper: {
-    '@alamah/shared': '<rootDir>/../shared/src',
-  },
 };

@@ -8,6 +8,8 @@
     "frontend"
   ],
   "scripts": {
+    "build": "npm install --prefix backend && npm run build --prefix backend",
+    "start": "cd backend && npx prisma migrate deploy && npx prisma db seed && node dist/server.js",
     "dev:backend": "yarn workspace backend dev",
     "dev:frontend": "yarn workspace frontend dev",
     "build:backend": "yarn workspace backend build",

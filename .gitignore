@@ -11,4 +11,3 @@ build/
 *.log
 coverage/
 .turbo/
-prisma/migrations/

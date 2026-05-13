@@ -61,7 +61,7 @@ router.put('/:id/activate', authorize('HR_ADMIN'), async (req: AuthRequest, res:
     });
     const { sendCycleActivatedEmail } = await import('../services/email.service');
     for (const emp of employees) {
-      await sendCycleActivatedEmail(emp as unknown as import('@alamah/shared').User);
+      await sendCycleActivatedEmail(emp as unknown as import('../types').User);
     }
 
     res.json({ cycle });
