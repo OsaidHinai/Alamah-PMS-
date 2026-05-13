@@ -1,4 +1,4 @@
-import { User, AppraisalResult } from '@alamah/shared';
+import { User, AppraisalResult } from '../types';
 
 export async function sendWelcomeEmail(user: User, temporaryPassword: string): Promise<void> {
   console.log(`[EMAIL] Welcome email to ${user.email} (${user.name_en})`);

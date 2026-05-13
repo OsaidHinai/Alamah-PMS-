@@ -10,7 +10,7 @@ import {
   sendManagerSubmittedEmail,
   sendCardFinalizedEmail,
 } from '../services/email.service';
-import { User, AppraisalResult } from '@alamah/shared';
+import { User, AppraisalResult } from '../types';
 
 const router = Router({ mergeParams: true });
 

@@ -6,7 +6,7 @@ import { authenticate, AuthRequest } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
 import { validateBody } from '../middleware/validateBody';
 import { sendWelcomeEmail } from '../services/email.service';
-import { User } from '@alamah/shared';
+import { User } from '../types';
 
 const router = Router();
 
