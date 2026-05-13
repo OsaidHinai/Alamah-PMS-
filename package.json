@@ -1,0 +1,17 @@
+{
+  "name": "alamah-pms",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev:backend": "yarn workspace backend dev",
+    "dev:frontend": "yarn workspace frontend dev",
+    "build:backend": "yarn workspace backend build",
+    "build:frontend": "yarn workspace frontend build",
+    "test:backend": "yarn workspace backend test"
+  }
+}

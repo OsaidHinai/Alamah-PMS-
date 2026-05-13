@@ -1,0 +1,170 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  HR_ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+enum CycleStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+enum CardStatus {
+  PENDING
+  EMPLOYEE_SUBMITTED
+  MANAGER_SUBMITTED
+  FINAL
+}
+
+enum Quarter {
+  Q1
+  Q3
+}
+
+model User {
+  id                    String   @id @default(cuid())
+  name_ar               String
+  name_en               String
+  email                 String   @unique
+  password_hash         String
+  role                  Role
+  manager_id            String?
+  department            String
+  is_active             Boolean  @default(true)
+  force_password_change Boolean  @default(true)
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+
+  manager              User?              @relation("ManagerToEmployee", fields: [manager_id], references: [id])
+  direct_reports       User[]             @relation("ManagerToEmployee")
+  performance_cards    PerformanceCard[]  @relation("EmployeeCards")
+  created_cycles       PerformanceCycle[] @relation("CycleCreator")
+  check_ins_submitted  CheckIn[]          @relation("CheckInSubmitter")
+  finalized_results    AppraisalResult[]  @relation("ResultFinalizer")
+
+  @@map("users")
+}
+
+model PerformanceCycle {
+  id         String      @id @default(cuid())
+  name       String
+  year       Int
+  status     CycleStatus @default(DRAFT)
+  created_by String
+  created_at DateTime    @default(now())
+  updated_at DateTime    @updatedAt
+
+  creator User              @relation("CycleCreator", fields: [created_by], references: [id])
+  cards   PerformanceCard[]
+
+  @@map("performance_cycles")
+}
+
+model PerformanceCard {
+  id          String     @id @default(cuid())
+  cycle_id    String
+  employee_id String
+  status      CardStatus @default(PENDING)
+  created_at  DateTime   @default(now())
+  updated_at  DateTime   @updatedAt
+
+  cycle        PerformanceCycle @relation(fields: [cycle_id], references: [id])
+  employee     User             @relation("EmployeeCards", fields: [employee_id], references: [id])
+  goals        Goal[]
+  competencies Competency[]
+  check_ins    CheckIn[]
+  result       AppraisalResult?
+
+  @@unique([cycle_id, employee_id])
+  @@map("performance_cards")
+}
+
+model Goal {
+  id               String   @id @default(cuid())
+  card_id          String
+  order            Int
+  title_ar         String
+  title_en         String
+  description      String   @default("")
+  weight           Decimal  @default(20.0)
+  employee_rating  Int?
+  employee_comment String?
+  manager_rating   Int?
+  manager_comment  String?
+  final_score      Decimal?
+
+  card PerformanceCard @relation(fields: [card_id], references: [id], onDelete: Cascade)
+
+  @@unique([card_id, order])
+  @@map("goals")
+}
+
+model Competency {
+  id               String   @id @default(cuid())
+  card_id          String
+  order            Int
+  title_ar         String
+  title_en         String
+  description      String   @default("")
+  weight           Decimal  @default(13.33)
+  employee_rating  Int?
+  employee_comment String?
+  manager_rating   Int?
+  manager_comment  String?
+  final_score      Decimal?
+
+  card PerformanceCard @relation(fields: [card_id], references: [id], onDelete: Cascade)
+
+  @@unique([card_id, order])
+  @@map("competencies")
+}
+
+model CheckIn {
+  id           String   @id @default(cuid())
+  card_id      String
+  quarter      Quarter
+  notes        String
+  submitted_by String
+  submitted_at DateTime @default(now())
+
+  card      PerformanceCard @relation(fields: [card_id], references: [id], onDelete: Cascade)
+  submitter User            @relation("CheckInSubmitter", fields: [submitted_by], references: [id])
+
+  @@map("check_ins")
+}
+
+model AppraisalResult {
+  id                  String   @id @default(cuid())
+  card_id             String   @unique
+  goals_score         Decimal
+  competencies_score  Decimal
+  total_score         Decimal
+  rating_label        String
+  hr_notes            String   @default("")
+  finalized_by        String
+  finalized_at        DateTime @default(now())
+
+  card      PerformanceCard @relation(fields: [card_id], references: [id], onDelete: Cascade)
+  finalizer User            @relation("ResultFinalizer", fields: [finalized_by], references: [id])
+
+  @@map("appraisal_results")
+}
+
+model CompetencyTemplate {
+  id          String @id @default(cuid())
+  title_ar    String
+  title_en    String
+  description String @default("")
+
+  @@map("competency_templates")
+}
