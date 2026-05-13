@@ -2,4 +2,4 @@
 buildCommand = "npm install --prefix backend && npm run build --prefix backend"
 
 [deploy]
-startCommand = "cd backend && npx prisma migrate deploy && npx prisma db seed && node dist/server.js"
+startCommand = "sh -c 'cd backend && npx prisma migrate deploy && npx prisma db seed && node dist/server.js'"
