@@ -2,18 +2,16 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-COPY package.json ./
-COPY shared/ ./shared/
-COPY backend/ ./backend/
+# Copy only the self-contained backend package
+COPY backend/package*.json ./
+COPY backend/prisma/ ./prisma/
+COPY backend/src/ ./src/
+COPY backend/tsconfig.json ./tsconfig.json
 
-# Install backend dependencies
-WORKDIR /app/backend
+# Install dependencies (postinstall runs prisma generate automatically)
 RUN npm install
 
-# Generate Prisma client
-RUN npx prisma generate
-
-# Build TypeScript
+# Compile TypeScript → dist/
 RUN npm run build
 
 EXPOSE 3001
