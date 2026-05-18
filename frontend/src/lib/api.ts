@@ -11,7 +11,29 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+let isRefreshing = false;
+let refreshQueue: Array<() => void> = [];
+
+async function tryRefresh(): Promise<boolean> {
+  if (isRefreshing) {
+    return new Promise((resolve) => {
+      refreshQueue.push(() => resolve(true));
+    });
+  }
+  isRefreshing = true;
+  try {
+    const res = await fetch(`${API_URL}/api/v1/auth/refresh`, { method: 'POST', credentials: 'include' });
+    refreshQueue.forEach((fn) => fn());
+    refreshQueue = [];
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    isRefreshing = false;
+  }
+}
+
+async function request<T>(path: string, options: RequestInit = {}, retry = true): Promise<T> {
   const res = await fetch(`${API_URL}/api/v1${path}`, {
     ...options,
     credentials: 'include',
@@ -20,6 +42,17 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       ...options.headers,
     },
   });
+
+  if (res.status === 401 && retry) {
+    const refreshed = await tryRefresh();
+    if (refreshed) {
+      return request<T>(path, options, false);
+    }
+    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+      window.location.href = '/login';
+    }
+    throw new ApiError(401, 'SESSION_EXPIRED', 'انتهت الجلسة، يرجى تسجيل الدخول مجدداً');
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');

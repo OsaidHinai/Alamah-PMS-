@@ -3,7 +3,7 @@ import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { prisma } from '../utils/prisma';
 import { comparePassword, hashPassword } from '../utils/password';
-import { signAccessToken, signRefreshToken } from '../utils/jwt';
+import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt';
 import { authenticate, AuthRequest } from '../middleware/authenticate';
 import { validateBody } from '../middleware/validateBody';
 
@@ -61,6 +61,30 @@ router.post('/login', loginLimiter, validateBody(loginSchema), async (req: Reque
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error', code: 'SERVER_ERROR' });
+  }
+});
+
+router.post('/refresh', async (req: Request, res: Response) => {
+  try {
+    const token = req.cookies?.refresh_token;
+    if (!token) {
+      res.status(401).json({ error: 'No refresh token', code: 'UNAUTHORIZED' });
+      return;
+    }
+    const payload = verifyRefreshToken(token);
+    const user = await prisma.user.findUnique({ where: { id: payload.userId } });
+    if (!user || !user.is_active) {
+      res.status(401).json({ error: 'Invalid session', code: 'UNAUTHORIZED' });
+      return;
+    }
+    const newPayload = { userId: user.id, role: user.role, email: user.email };
+    const accessToken = signAccessToken(newPayload);
+    const refreshToken = signRefreshToken(newPayload);
+    res.cookie('access_token', accessToken, { ...COOKIE_OPTIONS, maxAge: 15 * 60 * 1000 });
+    res.cookie('refresh_token', refreshToken, { ...COOKIE_OPTIONS, maxAge: 7 * 24 * 60 * 60 * 1000 });
+    res.json({ ok: true });
+  } catch {
+    res.status(401).json({ error: 'Session expired', code: 'SESSION_EXPIRED' });
   }
 });
 
