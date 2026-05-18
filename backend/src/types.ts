@@ -1,6 +1,14 @@
 export type Role = 'HR_ADMIN' | 'MANAGER' | 'EMPLOYEE';
 export type CycleStatus = 'DRAFT' | 'ACTIVE' | 'CLOSED';
-export type CardStatus = 'PENDING' | 'EMPLOYEE_SUBMITTED' | 'MANAGER_SUBMITTED' | 'FINAL';
+export type CardStatus =
+  | 'PENDING'
+  | 'EMPLOYEE_SUBMITTED'
+  | 'MANAGER_SUBMITTED'
+  | 'GOALS_SUBMITTED'
+  | 'GOALS_APPROVED'
+  | 'REVIEW_SUBMITTED'
+  | 'MANAGER_REVIEWED'
+  | 'FINAL';
 export type Quarter = 'Q1' | 'Q3';
 
 export interface User {

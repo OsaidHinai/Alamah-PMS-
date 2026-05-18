@@ -23,6 +23,10 @@ enum CardStatus {
   PENDING
   EMPLOYEE_SUBMITTED
   MANAGER_SUBMITTED
+  GOALS_SUBMITTED
+  GOALS_APPROVED
+  REVIEW_SUBMITTED
+  MANAGER_REVIEWED
   FINAL
 }
 
@@ -56,13 +60,17 @@ model User {
 }
 
 model PerformanceCycle {
-  id         String      @id @default(cuid())
-  name       String
-  year       Int
-  status     CycleStatus @default(DRAFT)
-  created_by String
-  created_at DateTime    @default(now())
-  updated_at DateTime    @updatedAt
+  id           String      @id @default(cuid())
+  name         String
+  year         Int
+  status       CycleStatus @default(DRAFT)
+  created_by   String
+  created_at   DateTime    @default(now())
+  updated_at   DateTime    @updatedAt
+  phase1_start DateTime?
+  phase1_end   DateTime?
+  phase2_start DateTime?
+  phase2_end   DateTime?
 
   creator User              @relation("CycleCreator", fields: [created_by], references: [id])
   cards   PerformanceCard[]
@@ -71,19 +79,21 @@ model PerformanceCycle {
 }
 
 model PerformanceCard {
-  id          String     @id @default(cuid())
-  cycle_id    String
-  employee_id String
-  status      CardStatus @default(PENDING)
-  created_at  DateTime   @default(now())
-  updated_at  DateTime   @updatedAt
+  id                    String     @id @default(cuid())
+  cycle_id              String
+  employee_id           String
+  status                CardStatus @default(PENDING)
+  goals_manager_comment String?
+  created_at            DateTime   @default(now())
+  updated_at            DateTime   @updatedAt
 
-  cycle        PerformanceCycle @relation(fields: [cycle_id], references: [id])
-  employee     User             @relation("EmployeeCards", fields: [employee_id], references: [id])
-  goals        Goal[]
-  competencies Competency[]
-  check_ins    CheckIn[]
-  result       AppraisalResult?
+  cycle            PerformanceCycle @relation(fields: [cycle_id], references: [id])
+  employee         User             @relation("EmployeeCards", fields: [employee_id], references: [id])
+  goals            Goal[]
+  competencies     Competency[]
+  check_ins        CheckIn[]
+  result           AppraisalResult?
+  next_cycle_goals NextCycleGoal[]
 
   @@unique([cycle_id, employee_id])
   @@map("performance_cards")
@@ -127,6 +137,19 @@ model Competency {
 
   @@unique([card_id, order])
   @@map("competencies")
+}
+
+model NextCycleGoal {
+  id          String          @id @default(cuid())
+  card_id     String
+  order       Int
+  title_ar    String
+  title_en    String
+  description String          @default("")
+  created_at  DateTime        @default(now())
+  card        PerformanceCard @relation(fields: [card_id], references: [id], onDelete: Cascade)
+
+  @@map("next_cycle_goals")
 }
 
 model CheckIn {

@@ -2,7 +2,15 @@ export type Role = 'HR_ADMIN' | 'MANAGER' | 'EMPLOYEE';
 
 export type CycleStatus = 'DRAFT' | 'ACTIVE' | 'CLOSED';
 
-export type CardStatus = 'PENDING' | 'EMPLOYEE_SUBMITTED' | 'MANAGER_SUBMITTED' | 'FINAL';
+export type CardStatus =
+  | 'PENDING'
+  | 'EMPLOYEE_SUBMITTED'
+  | 'MANAGER_SUBMITTED'
+  | 'GOALS_SUBMITTED'
+  | 'GOALS_APPROVED'
+  | 'REVIEW_SUBMITTED'
+  | 'MANAGER_REVIEWED'
+  | 'FINAL';
 
 export type Quarter = 'Q1' | 'Q3';
 
@@ -28,6 +36,10 @@ export interface PerformanceCycle {
   created_by: string;
   created_at: string;
   updated_at: string;
+  phase1_start: string | null;
+  phase1_end: string | null;
+  phase2_start: string | null;
+  phase2_end: string | null;
 }
 
 export interface Goal {
@@ -60,16 +72,28 @@ export interface Competency {
   final_score: number | null;
 }
 
+export interface NextCycleGoal {
+  id: string;
+  card_id: string;
+  order: number;
+  title_ar: string;
+  title_en: string;
+  description: string;
+  created_at: string;
+}
+
 export interface PerformanceCard {
   id: string;
   cycle_id: string;
   employee_id: string;
   status: CardStatus;
+  goals_manager_comment: string | null;
   created_at: string;
   updated_at: string;
   employee?: User;
   goals?: Goal[];
   competencies?: Competency[];
+  next_cycle_goals?: NextCycleGoal[];
 }
 
 export interface CheckIn {
@@ -159,8 +183,6 @@ export interface UpdateCompetencyRequest {
 }
 
 export interface FinalizeCardRequest {
-  goals: Array<{ id: string; final_score?: number }>;
-  competencies: Array<{ id: string; final_score?: number }>;
   hr_notes: string;
 }
 

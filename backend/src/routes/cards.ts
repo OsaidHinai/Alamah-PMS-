@@ -4,46 +4,63 @@ import { prisma } from '../utils/prisma';
 import { authenticate, AuthRequest } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
 import { validateBody } from '../middleware/validateBody';
-import { computeCardScores } from '../services/scoring.service';
-import {
-  sendEmployeeSubmittedEmail,
-  sendManagerSubmittedEmail,
-  sendCardFinalizedEmail,
-} from '../services/email.service';
-import { User, AppraisalResult } from '../types';
+import { RATING_LABELS } from '../types';
 
 const router = Router({ mergeParams: true });
 
 router.use(authenticate);
 
+// ─── Schemas ────────────────────────────────────────────────────────────────
+
 const createCardsSchema = z.object({
   employee_ids: z.array(z.string()).min(1),
+});
+
+const addGoalSchema = z.object({
+  title_ar: z.string().min(1),
+  title_en: z.string().min(1),
+  description: z.string().optional().default(''),
 });
 
 const updateGoalSchema = z.object({
   title_ar: z.string().optional(),
   title_en: z.string().optional(),
   description: z.string().optional(),
-  weight: z.number().positive().optional(),
   employee_rating: z.number().int().min(1).max(5).optional().nullable(),
   employee_comment: z.string().optional().nullable(),
   manager_rating: z.number().int().min(1).max(5).optional().nullable(),
   manager_comment: z.string().optional().nullable(),
-  final_score: z.number().min(1).max(5).optional().nullable(),
 });
 
-const updateCompetencySchema = updateGoalSchema;
+const requestChangesSchema = z.object({
+  comment: z.string().min(1),
+});
 
-const finalizeSchema = z.object({
-  goals: z.array(z.object({ id: z.string(), final_score: z.number().min(1).max(5).optional().nullable() })),
-  competencies: z.array(z.object({ id: z.string(), final_score: z.number().min(1).max(5).optional().nullable() })),
-  hr_notes: z.string().default(''),
+const nextCycleGoalsSchema = z.object({
+  goals: z.array(z.object({
+    title_ar: z.string().min(1),
+    title_en: z.string().min(1),
+    description: z.string().optional().default(''),
+  })).min(1).max(5),
 });
 
 const checkInSchema = z.object({
   quarter: z.enum(['Q1', 'Q3']),
   notes: z.string().min(1),
 });
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function getRatingLabel(score: number): string {
+  for (const entry of RATING_LABELS) {
+    if (score >= entry.min && score <= entry.max) {
+      return `${entry.label_ar} (${entry.label_en})`;
+    }
+  }
+  return 'غير محدد (Undetermined)';
+}
+
+// ─── Routes ─────────────────────────────────────────────────────────────────
 
 // GET /cycles/:cycleId/cards
 router.get('/:cycleId/cards', async (req: AuthRequest, res: Response) => {
@@ -81,7 +98,7 @@ router.get('/:cycleId/cards', async (req: AuthRequest, res: Response) => {
   }
 });
 
-// POST /cycles/:cycleId/cards
+// POST /cycles/:cycleId/cards — HR creates cards
 router.post('/:cycleId/cards', authorize('HR_ADMIN'), validateBody(createCardsSchema), async (req: AuthRequest, res: Response) => {
   try {
     const { cycleId } = req.params;
@@ -109,7 +126,7 @@ router.post('/:cycleId/cards', authorize('HR_ADMIN'), validateBody(createCardsSc
   }
 });
 
-// GET /cards/:id
+// GET /cards/:id — get single card with full details
 router.get('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const card = await prisma.performanceCard.findUnique({
@@ -120,6 +137,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
         competencies: { orderBy: { order: 'asc' } },
         check_ins: { orderBy: { submitted_at: 'asc' } },
         result: true,
+        next_cycle_goals: { orderBy: { order: 'asc' } },
       },
     });
     if (!card) {
@@ -129,7 +147,6 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 
     const { role, userId } = req.user!;
 
-    // Access control
     if (role === 'EMPLOYEE' && card.employee_id !== userId) {
       res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
       return;
@@ -142,26 +159,6 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
       }
     }
 
-    // Hide employee ratings from manager during blind rating stage (EMPLOYEE_SUBMITTED status)
-    const isManagerBlind = role === 'MANAGER' && card.status === 'EMPLOYEE_SUBMITTED';
-    if (isManagerBlind) {
-      const sanitized = {
-        ...card,
-        goals: card.goals.map((g: typeof card.goals[0]) => ({
-          ...g,
-          employee_rating: null,
-          employee_comment: null,
-        })),
-        competencies: card.competencies.map((c: typeof card.competencies[0]) => ({
-          ...c,
-          employee_rating: null,
-          employee_comment: null,
-        })),
-      };
-      res.json({ card: sanitized });
-      return;
-    }
-
     res.json({ card });
   } catch (err) {
     console.error(err);
@@ -169,12 +166,140 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
   }
 });
 
-// POST /cards/:id/submit-employee
-router.post('/:id/submit-employee', authorize('EMPLOYEE'), async (req: AuthRequest, res: Response) => {
+// POST /cards/:id/goals — Employee adds a goal
+router.post('/:id/goals', authorize('EMPLOYEE'), validateBody(addGoalSchema), async (req: AuthRequest, res: Response) => {
   try {
     const card = await prisma.performanceCard.findUnique({
       where: { id: req.params.id },
-      include: { goals: true, competencies: true, employee: true },
+      include: { goals: true },
+    });
+    if (!card) {
+      res.status(404).json({ error: 'Card not found', code: 'NOT_FOUND' });
+      return;
+    }
+    if (card.employee_id !== req.user!.userId) {
+      res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
+      return;
+    }
+    if (card.status !== 'PENDING') {
+      res.status(400).json({ error: 'Goals can only be added when card is PENDING', code: 'INVALID_STATE' });
+      return;
+    }
+    if (card.goals.length >= 5) {
+      res.status(400).json({ error: 'Maximum 5 goals allowed', code: 'MAX_GOALS' });
+      return;
+    }
+
+    const nextOrder = card.goals.length + 1;
+    const goal = await prisma.goal.create({
+      data: {
+        card_id: req.params.id,
+        order: nextOrder,
+        title_ar: req.body.title_ar,
+        title_en: req.body.title_en,
+        description: req.body.description || '',
+      },
+    });
+    res.status(201).json({ goal });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error', code: 'SERVER_ERROR' });
+  }
+});
+
+// PUT /cards/:id/goals/:goalId — update goal
+router.put('/:id/goals/:goalId', validateBody(updateGoalSchema), async (req: AuthRequest, res: Response) => {
+  try {
+    const card = await prisma.performanceCard.findUnique({ where: { id: req.params.id } });
+    if (!card) {
+      res.status(404).json({ error: 'Card not found', code: 'NOT_FOUND' });
+      return;
+    }
+
+    const { role, userId } = req.user!;
+    const update = req.body;
+
+    if (role === 'EMPLOYEE') {
+      if (card.employee_id !== userId) {
+        res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
+        return;
+      }
+
+      const titleFields = ['title_ar', 'title_en', 'description'];
+      const ratingFields = ['employee_rating', 'employee_comment'];
+      const titleUpdates = Object.keys(update).filter((k) => titleFields.includes(k));
+      const ratingUpdates = Object.keys(update).filter((k) => ratingFields.includes(k));
+
+      if (titleUpdates.length > 0 && card.status !== 'PENDING') {
+        res.status(400).json({ error: 'Goal title/description can only be edited when card is PENDING', code: 'STAGE_LOCKED' });
+        return;
+      }
+      if (ratingUpdates.length > 0 && card.status !== 'GOALS_APPROVED') {
+        res.status(400).json({ error: 'Self-assessment ratings can only be set when card is GOALS_APPROVED', code: 'STAGE_LOCKED' });
+        return;
+      }
+
+      const allowed = [...titleFields, ...ratingFields];
+      const disallowed = Object.keys(update).filter((k) => !allowed.includes(k));
+      if (disallowed.length > 0) {
+        res.status(403).json({ error: 'Employees can only update employee fields', code: 'FORBIDDEN' });
+        return;
+      }
+    } else if (role === 'MANAGER') {
+      if (card.status !== 'REVIEW_SUBMITTED') {
+        res.status(400).json({ error: 'Manager ratings can only be set when card is REVIEW_SUBMITTED', code: 'STAGE_LOCKED' });
+        return;
+      }
+      const allowed = ['manager_rating', 'manager_comment'];
+      const disallowed = Object.keys(update).filter((k) => !allowed.includes(k));
+      if (disallowed.length > 0) {
+        res.status(403).json({ error: 'Managers can only update manager fields', code: 'FORBIDDEN' });
+        return;
+      }
+    }
+    // HR_ADMIN can update anything
+
+    const goal = await prisma.goal.update({
+      where: { id: req.params.goalId },
+      data: update,
+    });
+    res.json({ goal });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error', code: 'SERVER_ERROR' });
+  }
+});
+
+// DELETE /cards/:id/goals/:goalId — Employee deletes a goal
+router.delete('/:id/goals/:goalId', authorize('EMPLOYEE'), async (req: AuthRequest, res: Response) => {
+  try {
+    const card = await prisma.performanceCard.findUnique({ where: { id: req.params.id } });
+    if (!card) {
+      res.status(404).json({ error: 'Card not found', code: 'NOT_FOUND' });
+      return;
+    }
+    if (card.employee_id !== req.user!.userId) {
+      res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
+      return;
+    }
+    if (card.status !== 'PENDING') {
+      res.status(400).json({ error: 'Goals can only be deleted when card is PENDING', code: 'INVALID_STATE' });
+      return;
+    }
+    await prisma.goal.delete({ where: { id: req.params.goalId } });
+    res.json({ message: 'Goal deleted' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error', code: 'SERVER_ERROR' });
+  }
+});
+
+// POST /cards/:id/submit-goals — Employee: PENDING → GOALS_SUBMITTED
+router.post('/:id/submit-goals', authorize('EMPLOYEE'), async (req: AuthRequest, res: Response) => {
+  try {
+    const card = await prisma.performanceCard.findUnique({
+      where: { id: req.params.id },
+      include: { goals: true },
     });
     if (!card) {
       res.status(404).json({ error: 'Card not found', code: 'NOT_FOUND' });
@@ -188,152 +313,187 @@ router.post('/:id/submit-employee', authorize('EMPLOYEE'), async (req: AuthReque
       res.status(400).json({ error: 'Card is not in PENDING status', code: 'INVALID_STATE' });
       return;
     }
-
-    // Validate all employee ratings are set
-    const allRated = [...card.goals, ...card.competencies].every((item) => item.employee_rating !== null);
-    if (!allRated) {
-      res.status(400).json({ error: 'All goals and competencies must have employee ratings', code: 'INCOMPLETE_RATINGS' });
+    if (card.goals.length < 1) {
+      res.status(400).json({ error: 'At least 1 goal is required', code: 'INCOMPLETE_GOALS' });
+      return;
+    }
+    const allValid = card.goals.every((g) => g.title_ar && g.title_en);
+    if (!allValid) {
+      res.status(400).json({ error: 'All goals must have Arabic and English titles', code: 'INCOMPLETE_GOALS' });
       return;
     }
 
     await prisma.performanceCard.update({
       where: { id: req.params.id },
-      data: { status: 'EMPLOYEE_SUBMITTED' },
+      data: { status: 'GOALS_SUBMITTED', goals_manager_comment: null },
     });
-
-    // Notify manager
-    if (card.employee.manager_id) {
-      const manager = await prisma.user.findUnique({ where: { id: card.employee.manager_id } });
-      if (manager) {
-        await sendEmployeeSubmittedEmail(manager as unknown as User, card.employee as unknown as User);
-      }
-    }
-
-    res.json({ message: 'Self-assessment submitted' });
+    res.json({ message: 'Goals submitted for manager approval' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error', code: 'SERVER_ERROR' });
   }
 });
 
-// POST /cards/:id/submit-manager
-router.post('/:id/submit-manager', authorize('MANAGER', 'HR_ADMIN'), async (req: AuthRequest, res: Response) => {
+// POST /cards/:id/approve-goals — Manager: GOALS_SUBMITTED → GOALS_APPROVED
+router.post('/:id/approve-goals', authorize('MANAGER', 'HR_ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
-    const card = await prisma.performanceCard.findUnique({
-      where: { id: req.params.id },
-      include: { goals: true, competencies: true, employee: true },
-    });
+    const card = await prisma.performanceCard.findUnique({ where: { id: req.params.id } });
     if (!card) {
       res.status(404).json({ error: 'Card not found', code: 'NOT_FOUND' });
       return;
     }
-    if (card.status !== 'EMPLOYEE_SUBMITTED') {
-      res.status(400).json({ error: 'Card is not in EMPLOYEE_SUBMITTED status', code: 'INVALID_STATE' });
+    if (card.status !== 'GOALS_SUBMITTED') {
+      res.status(400).json({ error: 'Card is not in GOALS_SUBMITTED status', code: 'INVALID_STATE' });
       return;
     }
-
-    // Validate all manager ratings are set
-    const allRated = [...card.goals, ...card.competencies].every((item) => item.manager_rating !== null);
-    if (!allRated) {
-      res.status(400).json({ error: 'All goals and competencies must have manager ratings', code: 'INCOMPLETE_RATINGS' });
-      return;
-    }
-
     await prisma.performanceCard.update({
       where: { id: req.params.id },
-      data: { status: 'MANAGER_SUBMITTED' },
+      data: { status: 'GOALS_APPROVED', goals_manager_comment: null },
     });
-
-    // Notify HR Admin
-    const hrAdmins = await prisma.user.findMany({ where: { role: 'HR_ADMIN', is_active: true } });
-    for (const hr of hrAdmins) {
-      await sendManagerSubmittedEmail(hr as unknown as User, card.employee as unknown as User);
-    }
-
-    res.json({ message: 'Manager rating submitted' });
+    res.json({ message: 'Goals approved' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error', code: 'SERVER_ERROR' });
   }
 });
 
-// POST /cards/:id/finalize
-router.post('/:id/finalize', authorize('HR_ADMIN'), validateBody(finalizeSchema), async (req: AuthRequest, res: Response) => {
+// POST /cards/:id/request-goal-changes — Manager: GOALS_SUBMITTED → PENDING (with comment)
+router.post('/:id/request-goal-changes', authorize('MANAGER', 'HR_ADMIN'), validateBody(requestChangesSchema), async (req: AuthRequest, res: Response) => {
+  try {
+    const card = await prisma.performanceCard.findUnique({ where: { id: req.params.id } });
+    if (!card) {
+      res.status(404).json({ error: 'Card not found', code: 'NOT_FOUND' });
+      return;
+    }
+    if (card.status !== 'GOALS_SUBMITTED') {
+      res.status(400).json({ error: 'Card is not in GOALS_SUBMITTED status', code: 'INVALID_STATE' });
+      return;
+    }
+    await prisma.performanceCard.update({
+      where: { id: req.params.id },
+      data: { status: 'PENDING', goals_manager_comment: req.body.comment },
+    });
+    res.json({ message: 'Goal changes requested' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error', code: 'SERVER_ERROR' });
+  }
+});
+
+// POST /cards/:id/submit-review — Employee: GOALS_APPROVED → REVIEW_SUBMITTED
+router.post('/:id/submit-review', authorize('EMPLOYEE'), async (req: AuthRequest, res: Response) => {
   try {
     const card = await prisma.performanceCard.findUnique({
       where: { id: req.params.id },
-      include: { goals: true, competencies: true, employee: true },
+      include: { goals: true },
     });
     if (!card) {
       res.status(404).json({ error: 'Card not found', code: 'NOT_FOUND' });
       return;
     }
-    if (card.status !== 'MANAGER_SUBMITTED') {
-      res.status(400).json({ error: 'Card is not in MANAGER_SUBMITTED status', code: 'INVALID_STATE' });
+    if (card.employee_id !== req.user!.userId) {
+      res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
+      return;
+    }
+    if (card.status !== 'GOALS_APPROVED') {
+      res.status(400).json({ error: 'Card is not in GOALS_APPROVED status', code: 'INVALID_STATE' });
+      return;
+    }
+    const allRated = card.goals.every((g) => g.employee_rating !== null);
+    if (!allRated) {
+      res.status(400).json({ error: 'All goals must have employee self-assessment ratings', code: 'INCOMPLETE_RATINGS' });
       return;
     }
 
-    const { goals: goalOverrides, competencies: compOverrides, hr_notes } = req.body;
-
-    // Apply final_score overrides
-    for (const override of goalOverrides) {
-      if (override.final_score !== undefined) {
-        await prisma.goal.update({
-          where: { id: override.id },
-          data: { final_score: override.final_score },
-        });
-      }
-    }
-    for (const override of compOverrides) {
-      if (override.final_score !== undefined) {
-        await prisma.competency.update({
-          where: { id: override.id },
-          data: { final_score: override.final_score },
-        });
-      }
-    }
-
-    // Re-fetch updated goals/competencies
-    const updatedCard = await prisma.performanceCard.findUnique({
+    await prisma.performanceCard.update({
       where: { id: req.params.id },
-      include: { goals: true, competencies: true, employee: true },
+      data: { status: 'REVIEW_SUBMITTED' },
     });
+    res.json({ message: 'Review submitted to manager' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error', code: 'SERVER_ERROR' });
+  }
+});
 
-    type ScoringRow = { employee_rating: number | null; manager_rating: number | null; final_score: unknown };
-    const scoreResult = computeCardScores(
-      (updatedCard!.goals as ScoringRow[]).map((g) => ({
-        employee_rating: g.employee_rating,
-        manager_rating: g.manager_rating,
-        final_score: g.final_score != null ? Number(g.final_score) : null,
-      })),
-      (updatedCard!.competencies as ScoringRow[]).map((c) => ({
-        employee_rating: c.employee_rating,
-        manager_rating: c.manager_rating,
-        final_score: c.final_score != null ? Number(c.final_score) : null,
-      })),
-    );
-
-    if (!scoreResult) {
-      res.status(400).json({ error: 'Cannot compute scores — incomplete ratings', code: 'INCOMPLETE_RATINGS' });
+// POST /cards/:id/approve-review — Manager: REVIEW_SUBMITTED → MANAGER_REVIEWED
+router.post('/:id/approve-review', authorize('MANAGER', 'HR_ADMIN'), async (req: AuthRequest, res: Response) => {
+  try {
+    const card = await prisma.performanceCard.findUnique({
+      where: { id: req.params.id },
+      include: { goals: true },
+    });
+    if (!card) {
+      res.status(404).json({ error: 'Card not found', code: 'NOT_FOUND' });
       return;
     }
+    if (card.status !== 'REVIEW_SUBMITTED') {
+      res.status(400).json({ error: 'Card is not in REVIEW_SUBMITTED status', code: 'INVALID_STATE' });
+      return;
+    }
+    const allRated = card.goals.every((g) => g.manager_rating !== null);
+    if (!allRated) {
+      res.status(400).json({ error: 'All goals must have manager ratings', code: 'INCOMPLETE_RATINGS' });
+      return;
+    }
+
+    await prisma.performanceCard.update({
+      where: { id: req.params.id },
+      data: { status: 'MANAGER_REVIEWED' },
+    });
+    res.json({ message: 'Manager review submitted to HR' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error', code: 'SERVER_ERROR' });
+  }
+});
+
+// POST /cards/:id/finalize — HR: MANAGER_REVIEWED → FINAL
+router.post('/:id/finalize', authorize('HR_ADMIN'), async (req: AuthRequest, res: Response) => {
+  try {
+    const card = await prisma.performanceCard.findUnique({
+      where: { id: req.params.id },
+      include: { goals: true, employee: true },
+    });
+    if (!card) {
+      res.status(404).json({ error: 'Card not found', code: 'NOT_FOUND' });
+      return;
+    }
+    if (card.status !== 'MANAGER_REVIEWED') {
+      res.status(400).json({ error: 'Card is not in MANAGER_REVIEWED status', code: 'INVALID_STATE' });
+      return;
+    }
+
+    const allManagerRated = card.goals.every((g) => g.manager_rating !== null);
+    if (!allManagerRated) {
+      res.status(400).json({ error: 'All goals must have manager ratings', code: 'INCOMPLETE_RATINGS' });
+      return;
+    }
+
+    // total_score = average of all goal manager_ratings (1–5)
+    const managerRatings = card.goals.map((g) => g.manager_rating as number);
+    const totalScore = managerRatings.reduce((sum, r) => sum + r, 0) / managerRatings.length;
+    const roundedScore = parseFloat(totalScore.toFixed(4));
+    const ratingLabel = getRatingLabel(roundedScore);
+
+    const hr_notes = (req.body?.hr_notes as string) || '';
 
     const result = await prisma.appraisalResult.upsert({
       where: { card_id: req.params.id },
       create: {
         card_id: req.params.id,
-        goals_score: scoreResult.goals_score,
-        competencies_score: scoreResult.competencies_score,
-        total_score: scoreResult.total_score,
-        rating_label: scoreResult.rating_label,
+        goals_score: roundedScore,
+        competencies_score: 0,
+        total_score: roundedScore,
+        rating_label: ratingLabel,
         hr_notes,
         finalized_by: req.user!.userId,
       },
       update: {
-        goals_score: scoreResult.goals_score,
-        competencies_score: scoreResult.competencies_score,
-        total_score: scoreResult.total_score,
-        rating_label: scoreResult.rating_label,
+        goals_score: roundedScore,
+        competencies_score: 0,
+        total_score: roundedScore,
+        rating_label: ratingLabel,
         hr_notes,
         finalized_by: req.user!.userId,
         finalized_at: new Date(),
@@ -345,18 +505,6 @@ router.post('/:id/finalize', authorize('HR_ADMIN'), validateBody(finalizeSchema)
       data: { status: 'FINAL' },
     });
 
-    // Notify employee and manager
-    if (updatedCard!.employee.manager_id) {
-      const manager = await prisma.user.findUnique({ where: { id: updatedCard!.employee.manager_id } });
-      if (manager) {
-        await sendCardFinalizedEmail(
-          updatedCard!.employee as unknown as User,
-          manager as unknown as User,
-          result as unknown as AppraisalResult,
-        );
-      }
-    }
-
     res.json({ result });
   } catch (err) {
     console.error(err);
@@ -364,121 +512,60 @@ router.post('/:id/finalize', authorize('HR_ADMIN'), validateBody(finalizeSchema)
   }
 });
 
-// PUT /cards/:id/goals/:goalId
-router.put('/:id/goals/:goalId', authenticate, validateBody(updateGoalSchema), async (req: AuthRequest, res: Response) => {
+// GET /cards/:id/next-goals — get next cycle goals
+router.get('/:id/next-goals', async (req: AuthRequest, res: Response) => {
   try {
     const card = await prisma.performanceCard.findUnique({ where: { id: req.params.id } });
     if (!card) {
       res.status(404).json({ error: 'Card not found', code: 'NOT_FOUND' });
       return;
     }
-
-    const { role, userId } = req.user!;
-    const update = req.body;
-
-    // Stage locking enforcement
-    const employeeFields = ['employee_rating', 'employee_comment'];
-    const managerFields = ['manager_rating', 'manager_comment'];
-    const adminFields = ['title_ar', 'title_en', 'description', 'weight', 'final_score'];
-
-    if (role === 'EMPLOYEE') {
-      if (card.employee_id !== userId) {
-        res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
-        return;
-      }
-      if (card.status !== 'PENDING') {
-        res.status(400).json({ error: 'Employee fields are locked after submission', code: 'STAGE_LOCKED' });
-        return;
-      }
-      const disallowed = Object.keys(update).filter((k) => !employeeFields.includes(k));
-      if (disallowed.length > 0) {
-        res.status(403).json({ error: 'Employees can only update employee fields', code: 'FORBIDDEN' });
-        return;
-      }
-    } else if (role === 'MANAGER') {
-      if (['PENDING', 'MANAGER_SUBMITTED', 'FINAL'].includes(card.status)) {
-        res.status(400).json({ error: 'Manager fields are locked in this stage', code: 'STAGE_LOCKED' });
-        return;
-      }
-      const disallowed = Object.keys(update).filter((k) => !managerFields.includes(k));
-      if (disallowed.length > 0) {
-        res.status(403).json({ error: 'Managers can only update manager fields', code: 'FORBIDDEN' });
-        return;
-      }
-    } else if (role === 'HR_ADMIN') {
-      const allowed = [...employeeFields, ...managerFields, ...adminFields];
-      const disallowed = Object.keys(update).filter((k) => !allowed.includes(k));
-      if (disallowed.length > 0) {
-        res.status(400).json({ error: 'Unknown fields', code: 'VALIDATION_ERROR' });
-        return;
-      }
-    }
-
-    const goal = await prisma.goal.update({
-      where: { id: req.params.goalId },
-      data: update,
+    const nextGoals = await prisma.nextCycleGoal.findMany({
+      where: { card_id: req.params.id },
+      orderBy: { order: 'asc' },
     });
-    res.json({ goal });
+    res.json({ nextGoals });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error', code: 'SERVER_ERROR' });
   }
 });
 
-// PUT /cards/:id/competencies/:compId
-router.put('/:id/competencies/:compId', authenticate, validateBody(updateCompetencySchema), async (req: AuthRequest, res: Response) => {
+// POST /cards/:id/next-goals — Employee saves next cycle goals (replaces all)
+router.post('/:id/next-goals', authorize('EMPLOYEE'), validateBody(nextCycleGoalsSchema), async (req: AuthRequest, res: Response) => {
   try {
     const card = await prisma.performanceCard.findUnique({ where: { id: req.params.id } });
     if (!card) {
       res.status(404).json({ error: 'Card not found', code: 'NOT_FOUND' });
       return;
     }
-
-    const { role, userId } = req.user!;
-    const update = req.body;
-
-    const employeeFields = ['employee_rating', 'employee_comment'];
-    const managerFields = ['manager_rating', 'manager_comment'];
-    const adminFields = ['title_ar', 'title_en', 'description', 'weight', 'final_score'];
-
-    if (role === 'EMPLOYEE') {
-      if (card.employee_id !== userId) {
-        res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
-        return;
-      }
-      if (card.status !== 'PENDING') {
-        res.status(400).json({ error: 'Employee fields are locked after submission', code: 'STAGE_LOCKED' });
-        return;
-      }
-      const disallowed = Object.keys(update).filter((k) => !employeeFields.includes(k));
-      if (disallowed.length > 0) {
-        res.status(403).json({ error: 'Employees can only update employee fields', code: 'FORBIDDEN' });
-        return;
-      }
-    } else if (role === 'MANAGER') {
-      if (['PENDING', 'MANAGER_SUBMITTED', 'FINAL'].includes(card.status)) {
-        res.status(400).json({ error: 'Manager fields are locked in this stage', code: 'STAGE_LOCKED' });
-        return;
-      }
-      const disallowed = Object.keys(update).filter((k) => !managerFields.includes(k));
-      if (disallowed.length > 0) {
-        res.status(403).json({ error: 'Managers can only update manager fields', code: 'FORBIDDEN' });
-        return;
-      }
-    } else if (role === 'HR_ADMIN') {
-      const allowed = [...employeeFields, ...managerFields, ...adminFields];
-      const disallowed = Object.keys(update).filter((k) => !allowed.includes(k));
-      if (disallowed.length > 0) {
-        res.status(400).json({ error: 'Unknown fields', code: 'VALIDATION_ERROR' });
-        return;
-      }
+    if (card.employee_id !== req.user!.userId) {
+      res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
+      return;
+    }
+    if (card.status !== 'GOALS_APPROVED') {
+      res.status(400).json({ error: 'Next cycle goals can only be saved when card is GOALS_APPROVED', code: 'INVALID_STATE' });
+      return;
     }
 
-    const competency = await prisma.competency.update({
-      where: { id: req.params.compId },
-      data: update,
-    });
-    res.json({ competency });
+    const { goals } = req.body as { goals: Array<{ title_ar: string; title_en: string; description?: string }> };
+
+    await prisma.nextCycleGoal.deleteMany({ where: { card_id: req.params.id } });
+    const nextGoals = await Promise.all(
+      goals.map((g, i) =>
+        prisma.nextCycleGoal.create({
+          data: {
+            card_id: req.params.id,
+            order: i + 1,
+            title_ar: g.title_ar,
+            title_en: g.title_en,
+            description: g.description || '',
+          },
+        }),
+      ),
+    );
+
+    res.json({ nextGoals });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error', code: 'SERVER_ERROR' });
@@ -486,7 +573,7 @@ router.put('/:id/competencies/:compId', authenticate, validateBody(updateCompete
 });
 
 // GET /cards/:id/checkins
-router.get('/:id/checkins', authenticate, async (req: AuthRequest, res: Response) => {
+router.get('/:id/checkins', async (req: AuthRequest, res: Response) => {
   try {
     const card = await prisma.performanceCard.findUnique({ where: { id: req.params.id } });
     if (!card) {

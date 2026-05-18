@@ -26,6 +26,11 @@ export default function CycleDetailPage() {
   const [assigning, setAssigning] = useState(false);
   const [error, setError] = useState('');
 
+  // Phase dates state
+  const [phases, setPhases] = useState({ phase1_start: '', phase1_end: '', phase2_start: '', phase2_end: '' });
+  const [savingPhases, setSavingPhases] = useState(false);
+  const [phaseSaveMsg, setPhaseSaveMsg] = useState('');
+
   async function fetchData() {
     try {
       const [cyclesData, cardsData, usersData] = await Promise.all([
@@ -33,7 +38,16 @@ export default function CycleDetailPage() {
         api.get<{ cards: CardWithEmployee[] }>(`/cycles/${id}/cards`),
         api.get<{ users: User[] }>('/users'),
       ]);
-      setCycle(cyclesData.cycles.find((c) => c.id === id) || null);
+      const found = cyclesData.cycles.find((c) => c.id === id) || null;
+      setCycle(found);
+      if (found) {
+        setPhases({
+          phase1_start: found.phase1_start ? found.phase1_start.slice(0, 10) : '',
+          phase1_end:   found.phase1_end   ? found.phase1_end.slice(0, 10)   : '',
+          phase2_start: found.phase2_start ? found.phase2_start.slice(0, 10) : '',
+          phase2_end:   found.phase2_end   ? found.phase2_end.slice(0, 10)   : '',
+        });
+      }
       setCards(cardsData.cards);
       const assigned = new Set(cardsData.cards.map((c) => c.employee_id));
       setEmployees(usersData.users.filter((u) => u.role === 'EMPLOYEE' && u.is_active && !assigned.has(u.id)));
@@ -59,6 +73,21 @@ export default function CycleDetailPage() {
       alert((err as Error).message);
     } finally {
       setAssigning(false);
+    }
+  }
+
+  async function handleSavePhases(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingPhases(true);
+    setPhaseSaveMsg('');
+    try {
+      await api.put(`/cycles/${id}/phases`, phases);
+      setPhaseSaveMsg('تم حفظ التواريخ بنجاح');
+      fetchData();
+    } catch (err: unknown) {
+      setPhaseSaveMsg((err as Error).message);
+    } finally {
+      setSavingPhases(false);
     }
   }
 
@@ -116,6 +145,61 @@ export default function CycleDetailPage() {
           </form>
         </div>
       )}
+
+      {/* Phase Dates */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+        <h2 className="font-semibold text-gray-900 mb-4">تواريخ المراحل</h2>
+        <form onSubmit={handleSavePhases}>
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">بداية المرحلة الأولى (Phase 1 Start)</label>
+              <input
+                type="date"
+                value={phases.phase1_start}
+                onChange={(e) => setPhases((p) => ({ ...p, phase1_start: e.target.value }))}
+                className="block w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">نهاية المرحلة الأولى (Phase 1 End)</label>
+              <input
+                type="date"
+                value={phases.phase1_end}
+                onChange={(e) => setPhases((p) => ({ ...p, phase1_end: e.target.value }))}
+                className="block w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">بداية المرحلة الثانية (Phase 2 Start)</label>
+              <input
+                type="date"
+                value={phases.phase2_start}
+                onChange={(e) => setPhases((p) => ({ ...p, phase2_start: e.target.value }))}
+                className="block w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">نهاية المرحلة الثانية (Phase 2 End)</label>
+              <input
+                type="date"
+                value={phases.phase2_end}
+                onChange={(e) => setPhases((p) => ({ ...p, phase2_end: e.target.value }))}
+                className="block w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+          </div>
+          {phaseSaveMsg && (
+            <p className={`text-sm mb-3 ${phaseSaveMsg.includes('نجاح') ? 'text-green-600' : 'text-red-600'}`}>{phaseSaveMsg}</p>
+          )}
+          <button
+            type="submit"
+            disabled={savingPhases}
+            className="bg-primary hover:bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+          >
+            {savingPhases ? 'جاري الحفظ...' : 'حفظ التواريخ'}
+          </button>
+        </form>
+      </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <table className="w-full">
