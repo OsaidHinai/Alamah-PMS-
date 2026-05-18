@@ -1,10 +1,14 @@
 import { CardStatus, CycleStatus } from '@alamah/shared';
 
-const cardStatusMap: Record<CardStatus, { label: string; color: string }> = {
-  PENDING: { label: 'قيد الإعداد', color: 'bg-gray-100 text-gray-700' },
-  EMPLOYEE_SUBMITTED: { label: 'تم تقديم التقييم الذاتي', color: 'bg-blue-100 text-blue-700' },
-  MANAGER_SUBMITTED: { label: 'تم تقييم المدير', color: 'bg-yellow-100 text-yellow-700' },
-  FINAL: { label: 'مكتمل', color: 'bg-green-100 text-green-700' },
+const cardStatusMap: Record<string, { label: string; color: string }> = {
+  PENDING:            { label: 'انتظار الأهداف',     color: 'bg-gray-100 text-gray-700' },
+  GOALS_SUBMITTED:    { label: 'أهداف مُرسلة',       color: 'bg-blue-100 text-blue-700' },
+  GOALS_APPROVED:     { label: 'أهداف مُعتمدة',      color: 'bg-teal-100 text-teal-700' },
+  REVIEW_SUBMITTED:   { label: 'مراجعة مُرسلة',      color: 'bg-purple-100 text-purple-700' },
+  MANAGER_REVIEWED:   { label: 'مراجعة المدير',      color: 'bg-orange-100 text-orange-700' },
+  FINAL:              { label: 'نهائي ✓',            color: 'bg-green-100 text-green-700' },
+  EMPLOYEE_SUBMITTED: { label: 'تقييم ذاتي مُرسل',  color: 'bg-blue-100 text-blue-700' },
+  MANAGER_SUBMITTED:  { label: 'تقييم المدير',       color: 'bg-yellow-100 text-yellow-700' },
 };
 
 const cycleStatusMap: Record<CycleStatus, { label: string; color: string }> = {

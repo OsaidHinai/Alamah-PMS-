@@ -93,4 +93,24 @@ router.put('/:id/close', authorize('HR_ADMIN'), async (req: AuthRequest, res: Re
   }
 });
 
+// PUT /cycles/:id/phases — HR sets phase dates
+router.put('/:id/phases', authorize('HR_ADMIN'), async (req: AuthRequest, res: Response) => {
+  try {
+    const { phase1_start, phase1_end, phase2_start, phase2_end } = req.body;
+    const cycle = await prisma.performanceCycle.update({
+      where: { id: req.params.id },
+      data: {
+        phase1_start: phase1_start ? new Date(phase1_start) : null,
+        phase1_end:   phase1_end   ? new Date(phase1_end)   : null,
+        phase2_start: phase2_start ? new Date(phase2_start) : null,
+        phase2_end:   phase2_end   ? new Date(phase2_end)   : null,
+      },
+    });
+    res.json({ cycle });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error', code: 'SERVER_ERROR' });
+  }
+});
+
 export default router;
