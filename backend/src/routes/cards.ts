@@ -6,6 +6,20 @@ import { authorize } from '../middleware/authorize';
 import { validateBody } from '../middleware/validateBody';
 import { RATING_LABELS } from '../types';
 
+interface GoalRow {
+  id: string;
+  card_id: string;
+  order: number;
+  title_ar: string;
+  title_en: string;
+  description: string;
+  employee_rating: number | null;
+  employee_comment: string | null;
+  manager_rating: number | null;
+  manager_comment: string | null;
+  final_score: unknown;
+}
+
 const router = Router({ mergeParams: true });
 
 router.use(authenticate);
@@ -317,7 +331,7 @@ router.post('/:id/submit-goals', authorize('EMPLOYEE'), async (req: AuthRequest,
       res.status(400).json({ error: 'At least 1 goal is required', code: 'INCOMPLETE_GOALS' });
       return;
     }
-    const allValid = card.goals.every((g) => g.title_ar && g.title_en);
+    const allValid = card.goals.every((g: GoalRow) => g.title_ar && g.title_en);
     if (!allValid) {
       res.status(400).json({ error: 'All goals must have Arabic and English titles', code: 'INCOMPLETE_GOALS' });
       return;
@@ -399,7 +413,7 @@ router.post('/:id/submit-review', authorize('EMPLOYEE'), async (req: AuthRequest
       res.status(400).json({ error: 'Card is not in GOALS_APPROVED status', code: 'INVALID_STATE' });
       return;
     }
-    const allRated = card.goals.every((g) => g.employee_rating !== null);
+    const allRated = card.goals.every((g: GoalRow) => g.employee_rating !== null);
     if (!allRated) {
       res.status(400).json({ error: 'All goals must have employee self-assessment ratings', code: 'INCOMPLETE_RATINGS' });
       return;
@@ -431,7 +445,7 @@ router.post('/:id/approve-review', authorize('MANAGER', 'HR_ADMIN'), async (req:
       res.status(400).json({ error: 'Card is not in REVIEW_SUBMITTED status', code: 'INVALID_STATE' });
       return;
     }
-    const allRated = card.goals.every((g) => g.manager_rating !== null);
+    const allRated = card.goals.every((g: GoalRow) => g.manager_rating !== null);
     if (!allRated) {
       res.status(400).json({ error: 'All goals must have manager ratings', code: 'INCOMPLETE_RATINGS' });
       return;
@@ -464,15 +478,15 @@ router.post('/:id/finalize', authorize('HR_ADMIN'), async (req: AuthRequest, res
       return;
     }
 
-    const allManagerRated = card.goals.every((g) => g.manager_rating !== null);
+    const allManagerRated = card.goals.every((g: GoalRow) => g.manager_rating !== null);
     if (!allManagerRated) {
       res.status(400).json({ error: 'All goals must have manager ratings', code: 'INCOMPLETE_RATINGS' });
       return;
     }
 
     // total_score = average of all goal manager_ratings (1–5)
-    const managerRatings = card.goals.map((g) => g.manager_rating as number);
-    const totalScore = managerRatings.reduce((sum, r) => sum + r, 0) / managerRatings.length;
+    const managerRatings = card.goals.map((g: GoalRow) => g.manager_rating as number);
+    const totalScore = managerRatings.reduce((sum: number, r: number) => sum + r, 0) / managerRatings.length;
     const roundedScore = parseFloat(totalScore.toFixed(4));
     const ratingLabel = getRatingLabel(roundedScore);
 

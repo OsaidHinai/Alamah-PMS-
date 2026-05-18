@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
-import { PerformanceCard, PerformanceCycle, Goal, Competency, CheckIn, AppraisalResult, CardStatus } from '@alamah/shared';
+import { PerformanceCard, PerformanceCycle, Goal, NextCycleGoal, AppraisalResult, CardStatus } from '@alamah/shared';
 import CardView from '@/components/CardView';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import Navbar from '@/components/Navbar';
@@ -12,10 +12,10 @@ interface CardFull {
   id: string;
   cycle_id: string;
   status: CardStatus;
+  goals_manager_comment: string | null;
   employee: { name_ar: string; name_en: string; department: string; manager_id: string | null };
   goals: Goal[];
-  competencies: Competency[];
-  check_ins: (CheckIn & { submitter?: { name_ar: string; name_en: string } })[];
+  next_cycle_goals: NextCycleGoal[];
   result?: AppraisalResult | null;
 }
 
@@ -76,29 +76,27 @@ function MyCardContent() {
       </div>
 
       {activeCard ? (
-        <div>
-          {activeCard.status === 'PENDING' && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 text-sm text-amber-700">
-              جاري إعداد بطاقتك من قِبل المدير. ستتمكن من إدخال تقييمك الذاتي قريباً.
-            </div>
-          )}
-          {activeCard.status === 'EMPLOYEE_SUBMITTED' && (
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 text-sm text-blue-700">
-              تم إرسال تقييمك الذاتي بنجاح. جاري مراجعة المدير.
-            </div>
-          )}
-          {activeCard.status === 'MANAGER_SUBMITTED' && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-6 text-sm text-yellow-700">
-              اكتملت مرحلة تقييم المدير. جاري المراجعة النهائية من الموارد البشرية.
-            </div>
-          )}
-          <CardView card={activeCard} viewerRole="EMPLOYEE" onRefresh={fetchData} />
-        </div>
+        <CardView card={activeCard} viewerRole="EMPLOYEE" onRefresh={fetchData} />
       ) : (
         <div className="text-center py-16 text-gray-500 bg-white rounded-xl border border-gray-200">
           لا توجد بطاقة أداء نشطة لك حالياً.
           <br />
           <span className="text-sm">سيقوم قسم الموارد البشرية بتعيين بطاقتك عند بدء دورة التقييم.</span>
+        </div>
+      )}
+
+      {/* Historical finalized cards */}
+      {allCards.length > 0 && !activeCard && (
+        <div className="mt-8">
+          <h2 className="text-lg font-semibold text-gray-800 mb-3">البطاقات السابقة</h2>
+          <div className="space-y-2">
+            {allCards.map((c) => (
+              <div key={c.id} className="bg-white border border-gray-200 rounded-lg p-4 flex justify-between items-center">
+                <span className="text-sm text-gray-700">{c.cycle?.name} — {c.cycle?.year}</span>
+                <span className="text-xs text-green-600 font-medium">نهائي</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
