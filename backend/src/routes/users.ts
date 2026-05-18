@@ -63,7 +63,7 @@ router.post('/', validateBody(createUserSchema), async (req: AuthRequest, res: R
       select: userSelect,
     });
     await sendWelcomeEmail(user as unknown as User, temporaryPassword);
-    res.status(201).json({ user });
+    res.status(201).json({ user, temporaryPassword });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error', code: 'SERVER_ERROR' });

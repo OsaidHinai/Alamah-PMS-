@@ -17,6 +17,7 @@ export default function NewUserPage() {
   const [form, setForm] = useState({ name_ar: '', name_en: '', email: '', role: 'EMPLOYEE' as Role, manager_id: '', department: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [tempPassword, setTempPassword] = useState('');
 
   useEffect(() => {
     api.get<{ users: User[] }>('/users')
@@ -33,8 +34,8 @@ export default function NewUserPage() {
     setError('');
     setLoading(true);
     try {
-      await api.post('/users', { ...form, manager_id: form.manager_id || null });
-      router.push('/admin/users');
+      const data = await api.post<{ user: User; temporaryPassword: string }>('/users', { ...form, manager_id: form.manager_id || null });
+      setTempPassword(data.temporaryPassword);
     } catch (err: unknown) {
       setError((err as Error).message);
     } finally {
@@ -124,6 +125,18 @@ export default function NewUserPage() {
             className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
+
+        {tempPassword && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-sm">
+            <p className="font-semibold text-green-800 mb-1">✓ تم إنشاء المستخدم بنجاح — User Created</p>
+            <p className="text-green-700">كلمة المرور المؤقتة / Temporary Password:</p>
+            <p className="font-mono text-lg font-bold text-green-900 mt-1 select-all" dir="ltr">{tempPassword}</p>
+            <p className="text-xs text-green-600 mt-2">سيُطلب من المستخدم تغيير كلمة المرور عند أول تسجيل دخول. / User will be required to change it on first login.</p>
+            <button onClick={() => router.push('/admin/users')} className="mt-3 bg-green-700 text-white px-4 py-1.5 rounded text-xs font-medium hover:bg-green-800">
+              العودة إلى المستخدمين ←
+            </button>
+          </div>
+        )}
 
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">{error}</div>

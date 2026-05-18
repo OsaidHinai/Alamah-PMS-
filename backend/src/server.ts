@@ -21,7 +21,8 @@ app.use(cookieParser());
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/users', usersRouter);
 app.use('/api/v1/cycles', cyclesRouter);
-app.use('/api/v1', cardsRouter);
+app.use('/api/v1/cycles', cardsRouter);
+app.use('/api/v1/cards', cardsRouter);
 app.use('/api/v1/competency-templates', templatesRouter);
 app.use('/api/v1/cards', cardSetupRouter);
 
