@@ -3,9 +3,9 @@ import { NextRequest, NextResponse } from 'next/server';
 const BACKEND_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 async function proxy(req: NextRequest): Promise<NextResponse> {
-  const path = req.nextUrl.pathname.replace('/api/', '');
+  const path = req.nextUrl.pathname; // e.g. /api/v1/auth/login
   const search = req.nextUrl.search;
-  const url = `${BACKEND_URL}/${path}${search}`;
+  const url = `${BACKEND_URL}${path}${search}`;
 
   const headers = new Headers();
   req.headers.forEach((value, key) => {
