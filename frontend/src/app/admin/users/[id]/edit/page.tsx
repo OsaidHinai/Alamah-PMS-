@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { User, Role } from '@alamah/shared';
 
 const roles: { value: Role; label: string }[] = [
+  { value: 'CEO', label: 'الرئيس التنفيذي (CEO)' },
   { value: 'HR_ADMIN', label: 'مسؤول الموارد البشرية (HR Admin)' },
   { value: 'MANAGER', label: 'مدير (Manager)' },
   { value: 'EMPLOYEE', label: 'موظف (Employee)' },
