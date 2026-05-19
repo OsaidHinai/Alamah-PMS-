@@ -372,7 +372,7 @@ router.post('/:id/submit-goals', authorize('EMPLOYEE', 'MANAGER', 'HR_ADMIN'), a
   }
 });
 
-// POST /cards/:id/approve-goals — Manager/CEO: GOALS_SUBMITTED → GOALS_APPROVED
+// POST /cards/:id/approve-goals — Manager/HR_ADMIN/CEO: GOALS_SUBMITTED → GOALS_APPROVED
 router.post('/:id/approve-goals', authorize('MANAGER', 'HR_ADMIN', 'CEO'), async (req: AuthRequest, res: Response) => {
   try {
     const card = await prisma.performanceCard.findUnique({
@@ -411,7 +411,7 @@ router.post('/:id/approve-goals', authorize('MANAGER', 'HR_ADMIN', 'CEO'), async
   }
 });
 
-// POST /cards/:id/request-goal-changes — Manager/CEO: GOALS_SUBMITTED → PENDING (with comment)
+// POST /cards/:id/request-goal-changes — Manager/HR_ADMIN/CEO: GOALS_SUBMITTED → PENDING (with comment)
 router.post('/:id/request-goal-changes', authorize('MANAGER', 'HR_ADMIN', 'CEO'), validateBody(requestChangesSchema), async (req: AuthRequest, res: Response) => {
   try {
     const card = await prisma.performanceCard.findUnique({
@@ -486,7 +486,7 @@ router.post('/:id/submit-review', authorize('EMPLOYEE', 'MANAGER', 'HR_ADMIN'), 
   }
 });
 
-// POST /cards/:id/approve-review — Manager/CEO: REVIEW_SUBMITTED → MANAGER_REVIEWED
+// POST /cards/:id/approve-review — Manager/HR_ADMIN/CEO: REVIEW_SUBMITTED → MANAGER_REVIEWED
 router.post('/:id/approve-review', authorize('MANAGER', 'HR_ADMIN', 'CEO'), async (req: AuthRequest, res: Response) => {
   try {
     const card = await prisma.performanceCard.findUnique({
