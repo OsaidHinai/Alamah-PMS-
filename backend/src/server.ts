@@ -8,6 +8,7 @@ import cyclesRouter from './routes/cycles';
 import cardsRouter from './routes/cards';
 import templatesRouter from './routes/templates';
 import cardSetupRouter from './routes/cardSetup';
+import ceoRouter from './routes/ceo';
 
 const app = express();
 
@@ -25,6 +26,7 @@ app.use('/api/v1/cycles', cardsRouter);
 app.use('/api/v1/cards', cardsRouter);
 app.use('/api/v1/competency-templates', templatesRouter);
 app.use('/api/v1/cards', cardSetupRouter);
+app.use('/api/v1/ceo', ceoRouter);
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });

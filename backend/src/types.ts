@@ -1,4 +1,4 @@
-export type Role = 'HR_ADMIN' | 'MANAGER' | 'EMPLOYEE';
+export type Role = 'HR_ADMIN' | 'MANAGER' | 'EMPLOYEE' | 'CEO';
 export type CycleStatus = 'DRAFT' | 'ACTIVE' | 'CLOSED';
 export type CardStatus =
   | 'PENDING'
