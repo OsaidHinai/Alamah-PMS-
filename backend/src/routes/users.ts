@@ -63,6 +63,21 @@ router.post('/', validateBody(createUserSchema), async (req: AuthRequest, res: R
       select: userSelect,
     });
     await sendWelcomeEmail(user as unknown as User, temporaryPassword);
+
+    // Auto-enroll in any active cycles if the user participates in evaluations
+    if (role === 'EMPLOYEE' || role === 'MANAGER' || role === 'HR_ADMIN') {
+      const activeCycles = await prisma.performanceCycle.findMany({ where: { status: 'ACTIVE' } });
+      await Promise.all(
+        activeCycles.map((cycle: { id: string }) =>
+          prisma.performanceCard.upsert({
+            where: { cycle_id_employee_id: { cycle_id: cycle.id, employee_id: user.id } },
+            create: { cycle_id: cycle.id, employee_id: user.id },
+            update: {},
+          }),
+        ),
+      );
+    }
+
     res.status(201).json({ user, temporaryPassword });
   } catch (err) {
     console.error(err);
