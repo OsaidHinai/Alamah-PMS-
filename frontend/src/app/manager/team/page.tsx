@@ -47,17 +47,26 @@ export default function TeamPage() {
           <h1 className="text-2xl font-bold text-gray-900">فريقي</h1>
           <p className="text-gray-500 text-sm">My Team</p>
         </div>
-        {cycles.length > 0 && (
-          <select
-            value={selectedCycleId}
-            onChange={(e) => setSelectedCycleId(e.target.value)}
-            className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+        <div className="flex items-center gap-3">
+          <Link
+            href="/my-card"
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition-colors"
           >
-            {cycles.map((c) => (
-              <option key={c.id} value={c.id}>{c.name} ({c.year})</option>
-            ))}
-          </select>
-        )}
+            <span>☰</span>
+            <span>بطاقتي الشخصية</span>
+          </Link>
+          {cycles.length > 0 && (
+            <select
+              value={selectedCycleId}
+              onChange={(e) => setSelectedCycleId(e.target.value)}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              {cycles.map((c) => (
+                <option key={c.id} value={c.id}>{c.name} ({c.year})</option>
+              ))}
+            </select>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

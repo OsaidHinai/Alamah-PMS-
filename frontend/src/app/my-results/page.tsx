@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { PerformanceCard, PerformanceCycle, AppraisalResult } from '@alamah/shared';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import Navbar from '@/components/Navbar';
+import AppShell from '@/components/AppShell';
 
 interface CardWithResult extends PerformanceCard {
   cycle: PerformanceCycle;
@@ -83,12 +83,9 @@ function MyResultsContent() {
 export default function MyResultsPage() {
   return (
     <ProtectedRoute allowedRoles={['EMPLOYEE', 'MANAGER', 'HR_ADMIN']}>
-      <div className="min-h-screen bg-gray-50">
-        <Navbar />
-        <main className="max-w-4xl mx-auto px-6 py-8">
-          <MyResultsContent />
-        </main>
-      </div>
+      <AppShell>
+        <MyResultsContent />
+      </AppShell>
     </ProtectedRoute>
   );
 }

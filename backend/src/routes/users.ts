@@ -14,7 +14,7 @@ const createUserSchema = z.object({
   name_ar: z.string().min(1),
   name_en: z.string().min(1),
   email: z.string().email(),
-  role: z.enum(['HR_ADMIN', 'MANAGER', 'EMPLOYEE']),
+  role: z.enum(['HR_ADMIN', 'MANAGER', 'EMPLOYEE', 'CEO']),
   manager_id: z.string().optional().nullable(),
   department: z.string().min(1),
 });
@@ -23,7 +23,7 @@ const updateUserSchema = z.object({
   name_ar: z.string().min(1).optional(),
   name_en: z.string().min(1).optional(),
   email: z.string().email().optional(),
-  role: z.enum(['HR_ADMIN', 'MANAGER', 'EMPLOYEE']).optional(),
+  role: z.enum(['HR_ADMIN', 'MANAGER', 'EMPLOYEE', 'CEO']).optional(),
   manager_id: z.string().optional().nullable(),
   department: z.string().min(1).optional(),
   is_active: z.boolean().optional(),

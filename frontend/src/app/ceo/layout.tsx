@@ -1,9 +1,9 @@
 import ProtectedRoute from '@/components/ProtectedRoute';
 import AppShell from '@/components/AppShell';
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default function CeoLayout({ children }: { children: React.ReactNode }) {
   return (
-    <ProtectedRoute allowedRoles={['HR_ADMIN']}>
+    <ProtectedRoute allowedRoles={['CEO']}>
       <AppShell>{children}</AppShell>
     </ProtectedRoute>
   );

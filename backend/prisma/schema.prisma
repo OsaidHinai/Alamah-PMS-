@@ -11,6 +11,7 @@ enum Role {
   HR_ADMIN
   MANAGER
   EMPLOYEE
+  CEO
 }
 
 enum CycleStatus {

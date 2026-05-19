@@ -6,7 +6,7 @@ import { api } from '@/lib/api';
 import { PerformanceCard, PerformanceCycle, Goal, NextCycleGoal, AppraisalResult, CardStatus } from '@alamah/shared';
 import CardView from '@/components/CardView';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import Navbar from '@/components/Navbar';
+import AppShell from '@/components/AppShell';
 
 interface CardFull {
   id: string;
@@ -106,12 +106,9 @@ function MyCardContent() {
 export default function MyCardPage() {
   return (
     <ProtectedRoute allowedRoles={['EMPLOYEE', 'MANAGER', 'HR_ADMIN']}>
-      <div className="min-h-screen bg-gray-50">
-        <Navbar />
-        <main className="max-w-4xl mx-auto px-6 py-8">
-          <MyCardContent />
-        </main>
-      </div>
+      <AppShell>
+        <MyCardContent />
+      </AppShell>
     </ProtectedRoute>
   );
 }

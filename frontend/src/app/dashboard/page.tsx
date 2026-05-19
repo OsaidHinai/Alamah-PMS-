@@ -18,7 +18,8 @@ export default function Dashboard() {
       router.replace('/change-password');
       return;
     }
-    if (user.role === 'HR_ADMIN') router.replace('/admin/cycles');
+    if (user.role === 'CEO') router.replace('/ceo/dashboard');
+    else if (user.role === 'HR_ADMIN') router.replace('/admin/cycles');
     else if (user.role === 'MANAGER') router.replace('/manager/team');
     else router.replace('/my-card');
   }, [user, loading, router]);

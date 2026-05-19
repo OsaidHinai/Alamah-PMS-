@@ -94,6 +94,7 @@ router.get('/:cycleId/cards', async (req: AuthRequest, res: Response) => {
       const reportIds = directReports.map((u: { id: string }) => u.id);
       whereClause = { ...whereClause, employee_id: { in: reportIds } };
     }
+    // HR_ADMIN and CEO see all cards (no additional where clause)
 
     const cards = await prisma.performanceCard.findMany({
       where: whereClause,
@@ -166,12 +167,16 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
       return;
     }
     if (role === 'MANAGER') {
-      const report = await prisma.user.findFirst({ where: { id: card.employee_id, manager_id: userId } });
-      if (!report) {
-        res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
-        return;
+      // Managers can view their direct reports' cards AND their own card
+      if (card.employee_id !== userId) {
+        const report = await prisma.user.findFirst({ where: { id: card.employee_id, manager_id: userId } });
+        if (!report) {
+          res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
+          return;
+        }
       }
     }
+    // HR_ADMIN and CEO can view any card
 
     res.json({ card });
   } catch (err) {
@@ -180,8 +185,8 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
   }
 });
 
-// POST /cards/:id/goals — Employee adds a goal
-router.post('/:id/goals', authorize('EMPLOYEE'), validateBody(addGoalSchema), async (req: AuthRequest, res: Response) => {
+// POST /cards/:id/goals — Employee/Manager/HR adds a goal to their own card
+router.post('/:id/goals', authorize('EMPLOYEE', 'MANAGER', 'HR_ADMIN'), validateBody(addGoalSchema), async (req: AuthRequest, res: Response) => {
   try {
     const card = await prisma.performanceCard.findUnique({
       where: { id: req.params.id },
@@ -259,19 +264,38 @@ router.put('/:id/goals/:goalId', validateBody(updateGoalSchema), async (req: Aut
         res.status(403).json({ error: 'Employees can only update employee fields', code: 'FORBIDDEN' });
         return;
       }
-    } else if (role === 'MANAGER') {
-      if (card.status !== 'REVIEW_SUBMITTED') {
-        res.status(400).json({ error: 'Manager ratings can only be set when card is REVIEW_SUBMITTED', code: 'STAGE_LOCKED' });
-        return;
+    } else if (role === 'MANAGER' || role === 'HR_ADMIN') {
+      // If updating their own card (they are the card's employee), apply employee-like restrictions
+      if (card.employee_id === userId) {
+        const titleFields = ['title_ar', 'title_en', 'description'];
+        const ratingFields = ['employee_rating', 'employee_comment'];
+        const titleUpdates = Object.keys(update).filter((k) => titleFields.includes(k));
+        const ratingUpdates = Object.keys(update).filter((k) => ratingFields.includes(k));
+        if (titleUpdates.length > 0 && card.status !== 'PENDING') {
+          res.status(400).json({ error: 'Goal title/description can only be edited when card is PENDING', code: 'STAGE_LOCKED' });
+          return;
+        }
+        if (ratingUpdates.length > 0 && card.status !== 'GOALS_APPROVED') {
+          res.status(400).json({ error: 'Self-assessment ratings can only be set when card is GOALS_APPROVED', code: 'STAGE_LOCKED' });
+          return;
+        }
+        // HR_ADMIN can update manager fields too; MANAGER updating own card only employee fields
+      } else if (role === 'MANAGER') {
+        // Manager reviewing a team member's card
+        if (card.status !== 'REVIEW_SUBMITTED') {
+          res.status(400).json({ error: 'Manager ratings can only be set when card is REVIEW_SUBMITTED', code: 'STAGE_LOCKED' });
+          return;
+        }
+        const allowed = ['manager_rating', 'manager_comment'];
+        const disallowed = Object.keys(update).filter((k) => !allowed.includes(k));
+        if (disallowed.length > 0) {
+          res.status(403).json({ error: 'Managers can only update manager fields', code: 'FORBIDDEN' });
+          return;
+        }
       }
-      const allowed = ['manager_rating', 'manager_comment'];
-      const disallowed = Object.keys(update).filter((k) => !allowed.includes(k));
-      if (disallowed.length > 0) {
-        res.status(403).json({ error: 'Managers can only update manager fields', code: 'FORBIDDEN' });
-        return;
-      }
+      // HR_ADMIN reviewing someone else's card can update anything
     }
-    // HR_ADMIN can update anything
+    // CEO cannot update goals directly
 
     const goal = await prisma.goal.update({
       where: { id: req.params.goalId },
@@ -284,8 +308,8 @@ router.put('/:id/goals/:goalId', validateBody(updateGoalSchema), async (req: Aut
   }
 });
 
-// DELETE /cards/:id/goals/:goalId — Employee deletes a goal
-router.delete('/:id/goals/:goalId', authorize('EMPLOYEE'), async (req: AuthRequest, res: Response) => {
+// DELETE /cards/:id/goals/:goalId — Employee/Manager/HR deletes a goal from their own card
+router.delete('/:id/goals/:goalId', authorize('EMPLOYEE', 'MANAGER', 'HR_ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     const card = await prisma.performanceCard.findUnique({ where: { id: req.params.id } });
     if (!card) {
@@ -308,8 +332,8 @@ router.delete('/:id/goals/:goalId', authorize('EMPLOYEE'), async (req: AuthReque
   }
 });
 
-// POST /cards/:id/submit-goals — Employee: PENDING → GOALS_SUBMITTED
-router.post('/:id/submit-goals', authorize('EMPLOYEE'), async (req: AuthRequest, res: Response) => {
+// POST /cards/:id/submit-goals — Employee/Manager/HR: PENDING → GOALS_SUBMITTED (own card)
+router.post('/:id/submit-goals', authorize('EMPLOYEE', 'MANAGER', 'HR_ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     const card = await prisma.performanceCard.findUnique({
       where: { id: req.params.id },
@@ -348,10 +372,13 @@ router.post('/:id/submit-goals', authorize('EMPLOYEE'), async (req: AuthRequest,
   }
 });
 
-// POST /cards/:id/approve-goals — Manager: GOALS_SUBMITTED → GOALS_APPROVED
-router.post('/:id/approve-goals', authorize('MANAGER', 'HR_ADMIN'), async (req: AuthRequest, res: Response) => {
+// POST /cards/:id/approve-goals — Manager/HR_ADMIN/CEO: GOALS_SUBMITTED → GOALS_APPROVED
+router.post('/:id/approve-goals', authorize('MANAGER', 'HR_ADMIN', 'CEO'), async (req: AuthRequest, res: Response) => {
   try {
-    const card = await prisma.performanceCard.findUnique({ where: { id: req.params.id } });
+    const card = await prisma.performanceCard.findUnique({
+      where: { id: req.params.id },
+      include: { employee: { select: { role: true } } },
+    });
     if (!card) {
       res.status(404).json({ error: 'Card not found', code: 'NOT_FOUND' });
       return;
@@ -359,6 +386,19 @@ router.post('/:id/approve-goals', authorize('MANAGER', 'HR_ADMIN'), async (req: 
     if (card.status !== 'GOALS_SUBMITTED') {
       res.status(400).json({ error: 'Card is not in GOALS_SUBMITTED status', code: 'INVALID_STATE' });
       return;
+    }
+    const approverRole = req.user!.role;
+    const employeeRole = card.employee.role;
+    if (employeeRole === 'MANAGER' || employeeRole === 'HR_ADMIN') {
+      if (approverRole !== 'CEO') {
+        res.status(403).json({ error: 'Only CEO can approve goals for managers/HR admins', code: 'FORBIDDEN' });
+        return;
+      }
+    } else {
+      if (approverRole !== 'MANAGER' && approverRole !== 'HR_ADMIN') {
+        res.status(403).json({ error: 'Only manager or HR admin can approve employee goals', code: 'FORBIDDEN' });
+        return;
+      }
     }
     await prisma.performanceCard.update({
       where: { id: req.params.id },
@@ -371,10 +411,13 @@ router.post('/:id/approve-goals', authorize('MANAGER', 'HR_ADMIN'), async (req: 
   }
 });
 
-// POST /cards/:id/request-goal-changes — Manager: GOALS_SUBMITTED → PENDING (with comment)
-router.post('/:id/request-goal-changes', authorize('MANAGER', 'HR_ADMIN'), validateBody(requestChangesSchema), async (req: AuthRequest, res: Response) => {
+// POST /cards/:id/request-goal-changes — Manager/HR_ADMIN/CEO: GOALS_SUBMITTED → PENDING (with comment)
+router.post('/:id/request-goal-changes', authorize('MANAGER', 'HR_ADMIN', 'CEO'), validateBody(requestChangesSchema), async (req: AuthRequest, res: Response) => {
   try {
-    const card = await prisma.performanceCard.findUnique({ where: { id: req.params.id } });
+    const card = await prisma.performanceCard.findUnique({
+      where: { id: req.params.id },
+      include: { employee: { select: { role: true } } },
+    });
     if (!card) {
       res.status(404).json({ error: 'Card not found', code: 'NOT_FOUND' });
       return;
@@ -382,6 +425,19 @@ router.post('/:id/request-goal-changes', authorize('MANAGER', 'HR_ADMIN'), valid
     if (card.status !== 'GOALS_SUBMITTED') {
       res.status(400).json({ error: 'Card is not in GOALS_SUBMITTED status', code: 'INVALID_STATE' });
       return;
+    }
+    const approverRole = req.user!.role;
+    const employeeRole = card.employee.role;
+    if (employeeRole === 'MANAGER' || employeeRole === 'HR_ADMIN') {
+      if (approverRole !== 'CEO') {
+        res.status(403).json({ error: 'Only CEO can request changes for managers/HR admins', code: 'FORBIDDEN' });
+        return;
+      }
+    } else {
+      if (approverRole !== 'MANAGER' && approverRole !== 'HR_ADMIN') {
+        res.status(403).json({ error: 'Only manager or HR admin can request changes for employees', code: 'FORBIDDEN' });
+        return;
+      }
     }
     await prisma.performanceCard.update({
       where: { id: req.params.id },
@@ -394,8 +450,8 @@ router.post('/:id/request-goal-changes', authorize('MANAGER', 'HR_ADMIN'), valid
   }
 });
 
-// POST /cards/:id/submit-review — Employee: GOALS_APPROVED → REVIEW_SUBMITTED
-router.post('/:id/submit-review', authorize('EMPLOYEE'), async (req: AuthRequest, res: Response) => {
+// POST /cards/:id/submit-review — Employee/Manager/HR: GOALS_APPROVED → REVIEW_SUBMITTED (own card)
+router.post('/:id/submit-review', authorize('EMPLOYEE', 'MANAGER', 'HR_ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     const card = await prisma.performanceCard.findUnique({
       where: { id: req.params.id },
@@ -430,12 +486,12 @@ router.post('/:id/submit-review', authorize('EMPLOYEE'), async (req: AuthRequest
   }
 });
 
-// POST /cards/:id/approve-review — Manager: REVIEW_SUBMITTED → MANAGER_REVIEWED
-router.post('/:id/approve-review', authorize('MANAGER', 'HR_ADMIN'), async (req: AuthRequest, res: Response) => {
+// POST /cards/:id/approve-review — Manager/HR_ADMIN/CEO: REVIEW_SUBMITTED → MANAGER_REVIEWED
+router.post('/:id/approve-review', authorize('MANAGER', 'HR_ADMIN', 'CEO'), async (req: AuthRequest, res: Response) => {
   try {
     const card = await prisma.performanceCard.findUnique({
       where: { id: req.params.id },
-      include: { goals: true },
+      include: { goals: true, employee: { select: { role: true } } },
     });
     if (!card) {
       res.status(404).json({ error: 'Card not found', code: 'NOT_FOUND' });
@@ -444,6 +500,19 @@ router.post('/:id/approve-review', authorize('MANAGER', 'HR_ADMIN'), async (req:
     if (card.status !== 'REVIEW_SUBMITTED') {
       res.status(400).json({ error: 'Card is not in REVIEW_SUBMITTED status', code: 'INVALID_STATE' });
       return;
+    }
+    const approverRole = req.user!.role;
+    const employeeRole = card.employee.role;
+    if (employeeRole === 'MANAGER' || employeeRole === 'HR_ADMIN') {
+      if (approverRole !== 'CEO') {
+        res.status(403).json({ error: 'Only CEO can approve review for managers/HR admins', code: 'FORBIDDEN' });
+        return;
+      }
+    } else {
+      if (approverRole !== 'MANAGER' && approverRole !== 'HR_ADMIN') {
+        res.status(403).json({ error: 'Only manager or HR admin can approve employee review', code: 'FORBIDDEN' });
+        return;
+      }
     }
     const allRated = card.goals.every((g: GoalRow) => g.manager_rating !== null);
     if (!allRated) {
@@ -545,8 +614,8 @@ router.get('/:id/next-goals', async (req: AuthRequest, res: Response) => {
   }
 });
 
-// POST /cards/:id/next-goals — Employee saves next cycle goals (replaces all)
-router.post('/:id/next-goals', authorize('EMPLOYEE'), validateBody(nextCycleGoalsSchema), async (req: AuthRequest, res: Response) => {
+// POST /cards/:id/next-goals — Employee/Manager/HR saves next cycle goals (own card)
+router.post('/:id/next-goals', authorize('EMPLOYEE', 'MANAGER', 'HR_ADMIN'), validateBody(nextCycleGoalsSchema), async (req: AuthRequest, res: Response) => {
   try {
     const card = await prisma.performanceCard.findUnique({ where: { id: req.params.id } });
     if (!card) {
