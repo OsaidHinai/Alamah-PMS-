@@ -55,13 +55,24 @@ router.put('/:id/activate', authorize('HR_ADMIN'), async (req: AuthRequest, res:
       data: { status: 'ACTIVE' },
     });
 
-    // Notify all active employees
-    const employees = await prisma.user.findMany({
-      where: { role: 'EMPLOYEE', is_active: true },
+    // Auto-create cards for all active employees, managers, and HR admins
+    const participants = await prisma.user.findMany({
+      where: { role: { in: ['EMPLOYEE', 'MANAGER', 'HR_ADMIN'] }, is_active: true },
     });
+    await Promise.all(
+      participants.map((u: { id: string }) =>
+        prisma.performanceCard.upsert({
+          where: { cycle_id_employee_id: { cycle_id: req.params.id, employee_id: u.id } },
+          create: { cycle_id: req.params.id, employee_id: u.id },
+          update: {},
+        }),
+      ),
+    );
+
+    // Notify participants
     const { sendCycleActivatedEmail } = await import('../services/email.service');
-    for (const emp of employees) {
-      await sendCycleActivatedEmail(emp as unknown as import('../types').User);
+    for (const u of participants) {
+      await sendCycleActivatedEmail(u as unknown as import('../types').User);
     }
 
     res.json({ cycle });
